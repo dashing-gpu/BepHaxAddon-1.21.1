@@ -1,101 +1,68 @@
 package bep.hax.mixin;
 
 import java.util.Arrays;
-import java.util.stream.Collectors;
-
-import bep.hax.modules.AntiToS;
-import meteordevelopment.meteorclient.systems.modules.Modules;
-import meteordevelopment.meteorclient.systems.modules.render.NoRender;
-
-import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.block.entity.SignText;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.block.entity.SignBlockEntityRenderer;
-import net.minecraft.client.render.block.entity.HangingSignBlockEntityRenderer;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
-
+import java.util.stream.Collectors;
+import bep.hax.modules.AntiToS;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
+import net.minecraft.block.entity.SignText;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.block.entity.SignBlockEntity;
 import org.spongepowered.asm.mixin.injection.Inject;
+import net.minecraft.client.render.VertexConsumerProvider;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import net.minecraft.client.render.block.entity.BlockEntityRenderer;
+import meteordevelopment.meteorclient.systems.modules.render.NoRender;
+import net.minecraft.client.render.block.entity.AbstractSignBlockEntityRenderer;
 
-@Mixin({ SignBlockEntityRenderer.class, HangingSignBlockEntityRenderer.class })
-abstract class SignRendererMixin {
+/**
+ * @author Tas [0xTas] <root@0xTas.dev>
+ **/
+@Mixin(AbstractSignBlockEntityRenderer.class)
+public abstract class AbstractSignBlockEntityRendererMixin implements BlockEntityRenderer<SignBlockEntity> {
 
-    /**
-     * Swap out any blacklisted text before the sign is drawn.
-     */
-    @ModifyVariable(
-        method    = "renderText",
-        at        = @At("HEAD"),
-        argsOnly  = true
-    )
-    private SignText modifyRenderedText(SignText original) {
-        Modules mods = Modules.get();
-        if (mods == null) return original;
+    // See AntiToS.java
+    @ModifyVariable(method = "renderText", at = @At("HEAD"), argsOnly = true)
+    private SignText modifyRenderedText(SignText signText) {
+        Modules modules = Modules.get();
+        if (modules == null ) return signText;
+        AntiToS antiToS = modules.get(AntiToS.class);
+        if (!antiToS.isActive()) return signText;
 
-        AntiToS anti = mods.get(AntiToS.class);
-        if (!anti.isActive()) return original;
-
-        String joined = Arrays.stream(original.getMessages(false))
+        String testText = Arrays.stream(signText.getMessages(false))
             .map(Text::getString)
             .collect(Collectors.joining(" "))
             .trim();
-
-        return anti.containsBlacklistedText(joined)
-            ? anti.familyFriendlySignText(original)
-            : original;
+        return antiToS.containsBlacklistedText(testText) ? antiToS.familyFriendlySignText(signText) : signText;
     }
 
-    /**
-     * Cancel the entire sign render if configured (NoRender or AntiToS NoRender mode).
-     */
-    @Inject(
-        method      = "render(Lnet/minecraft/block/entity/SignBlockEntity;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-        at          = @At("HEAD"),
-        cancellable = true
-    )
-    private void onRender(
-        SignBlockEntity            sign,
-        float                      delta,
-        MatrixStack                matrices,
-        VertexConsumerProvider     vcp,
-        int                        light,
-        CallbackInfo               ci
-    ) {
+    // See NoRenderMixin.java
+    @Inject(method = "render(Lnet/minecraft/block/entity/SignBlockEntity;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;II)V", at = @At("HEAD"), cancellable = true)
+    private void onRender(SignBlockEntity signBlockEntity, float f, MatrixStack matrixStack, VertexConsumerProvider vertexConsumerProvider, int i, int j, CallbackInfo ci) {
         Modules mods = Modules.get();
         if (mods == null) return;
-
-        // 1) NoRender “cody-signs” toggle
-        NoRender nr = mods.get(NoRender.class);
-        var setting = nr.settings.get("cody-signs");
-        if (nr.isActive() && setting != null && (boolean) setting.get() && isCodySign(sign)) {
+        AntiToS antiToS = mods.get(AntiToS.class);
+        NoRender noRender = mods.get(NoRender.class);
+        var signSetting = noRender.settings.get("cody-signs");
+        if (signSetting == null) return;
+        if (noRender.isActive() && (boolean) signSetting.get() && isCodySign(signBlockEntity)) {
             ci.cancel();
-            return;
         }
 
-        // 2) AntiToS NoRender mode
-        AntiToS anti = mods.get(AntiToS.class);
-        if (anti.isActive() && anti.signMode.get() == AntiToS.SignMode.NoRender) {
-            String text = Arrays.stream(sign.getFrontText().getMessages(false))
-                .map(Text::getString)
-                .collect(Collectors.joining());
-            if (anti.containsBlacklistedText(text)) {
+        if (antiToS.isActive() && antiToS.signMode.get().equals(AntiToS.SignMode.NoRender)) {
+            if (antiToS.containsBlacklistedText(Arrays.stream(signBlockEntity.getFrontText().getMessages(false)).map(Text::getString).collect(Collectors.joining()))) {
                 ci.cancel();
             }
         }
     }
 
     @Unique
-    private boolean isCodySign(SignBlockEntity sign) {
-        return Arrays.stream(sign.getFrontText().getMessages(false))
-            .map(Text::getString)
-            .anyMatch(msg ->
-                msg.contains("codysmile11") ||
-                    msg.toLowerCase().contains("has been here :)")
-            );
+    private boolean isCodySign(SignBlockEntity sbe) {
+        SignText frontText = sbe.getFrontText();
+        return Arrays.stream(frontText.getMessages(false)).anyMatch(msg -> msg.getString().contains("codysmile11") || msg.getString().toLowerCase().contains("has been here :)"));
     }
 }

@@ -1,101 +1,138 @@
 package bep.hax.mixin;
 
-import java.util.Arrays;
-import java.util.stream.Collectors;
-
-import net.minecraft.block.entity.SignBlockEntity;  // remove if unused
-import net.minecraft.block.entity.SignText;         // remove if unused
-
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.screen.PlayerScreenHandler;
 import net.minecraft.text.Text;
-
+import javax.annotation.Nullable;
 import bep.hax.modules.Loadouts;
 import bep.hax.util.StardustUtil;
-import meteordevelopment.meteorclient.systems.modules.Modules;
-
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import org.spongepowered.asm.mixin.injection.At;
+import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.entity.player.PlayerInventory;
 import org.spongepowered.asm.mixin.injection.Inject;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import meteordevelopment.meteorclient.systems.modules.Modules;
+import net.minecraft.client.gui.screen.ingame.RecipeBookScreen;
+import net.minecraft.client.gui.screen.recipebook.RecipeBookWidget;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import net.minecraft.client.gui.screen.recipebook.RecipeBookProvider;
 
 /**
- * @author Tas [0xTas]
- */
+ * @author Tas [0xTas] <root@0xTas.dev>
+ **/
 @Mixin(InventoryScreen.class)
-abstract class InventoryScreenMixin {
-    // shadow the recipe‐book widget & layout fields from InventoryScreen
-    @Shadow private RecipeBookWidget<PlayerScreenHandler> recipeBookWidget;
-    @Shadow protected int x;
-    @Shadow protected int y;
-    @Shadow protected int backgroundWidth;
-    @Shadow protected int backgroundHeight;
+public abstract class InventoryScreenMixin extends RecipeBookScreen<PlayerScreenHandler>
+    implements RecipeBookProvider {
 
-    @Unique private Loadouts loadouts;
-    @Unique private ButtonWidget saveLoadoutButton;
-    @Unique private ButtonWidget loadLoadoutButton;
+    public InventoryScreenMixin(PlayerScreenHandler handler, RecipeBookWidget<?> recipeBook, PlayerInventory inventory, Text title) {
+        super(handler, recipeBook, inventory, title);
+    }
 
-    // Called at the end of InventoryScreen.init(...)
-    @Inject(method = "init(Lnet/minecraft/client/util/math/MatrixStack;II)V", at = @At("TAIL"))
-    private void onInit(MatrixStack matrices, int mouseX, int mouseY, CallbackInfo ci) {
-        var mods = Modules.get();
-        if (mods == null) return;
-        loadouts = mods.get(Loadouts.class);
-        if (loadouts == null || !loadouts.quickLoadout.get()) return;
+    @Unique @Nullable
+    private Loadouts loadouts = null;
 
-        // position buttons underneath the inventory
-        int btnW = 42, btnH = 16;
-        int saveX = x + backgroundWidth/2 - btnW - 2;
-        int loadX = x + backgroundWidth/2 + 2;
-        int btnY = y + backgroundHeight - btnH - 5;
+    @Unique @Nullable
+    private ButtonWidget saveLoadoutButton = null;
 
-        saveLoadoutButton = addDrawableChild(
-            ButtonWidget.builder(Text.of(StardustUtil.rCC() + "§o✨§fSave"), b -> {
-                    loadouts.saveLoadout("quicksave");
-                    b.setMessage(Text.of(StardustUtil.rCC() + "§o✨§fSave"));
-                })
-                .dimensions(saveX, btnY, btnW, btnH)
+    @Unique @Nullable
+    private ButtonWidget loadLoadoutButton = null;
+
+    @Unique
+    private void onSaveLoadoutButtonPress(ButtonWidget btn) {
+        if (loadouts == null) {
+            Modules modules = Modules.get();
+            if (modules == null ) return;
+            loadouts = modules.get(Loadouts.class);
+
+            if (loadouts == null) return;
+        }
+        loadouts.saveLoadout("quicksave");
+        btn.setMessage(Text.of(StardustUtil.rCC()+"§o✨§fSave"));
+    }
+
+    @Unique
+    private void onLoadLoadoutButtonPress(ButtonWidget btn) {
+        if (loadouts == null) {
+            Modules modules = Modules.get();
+            if (modules == null ) return;
+            loadouts = modules.get(Loadouts.class);
+
+            if (loadouts == null) return;
+        }
+        loadouts.loadLoadout("quicksave");
+        btn.setMessage(Text.of("Load"+StardustUtil.rCC()+"§o✨"));
+    }
+
+    @Inject(method = "init", at = @At("TAIL"))
+    private void mixinInit(CallbackInfo ci) {
+        if (loadouts == null) {
+            Modules modules = Modules.get();
+            if (modules == null ) return;
+            loadouts = modules.get(Loadouts.class);
+
+            if (loadouts == null) return;
+        }
+
+        if (!loadouts.quickLoadout.get()) return;
+        saveLoadoutButton = this.addDrawableChild(
+            ButtonWidget.builder(
+                    Text.of(StardustUtil.rCC()+"§o✨§fSave"),
+                    this::onSaveLoadoutButtonPress
+                )
+                .dimensions(this.width / 2 - 42, this.height / 2 + 83, 42, 16)
                 .tooltip(Tooltip.of(Text.of("§7§oSave your current inventory to Loadouts.")))
                 .build()
         );
-        loadLoadoutButton = addDrawableChild(
-            ButtonWidget.builder(Text.of("Load" + StardustUtil.rCC() + "§o✨"), b -> {
-                    loadouts.loadLoadout("quicksave");
-                    b.setMessage(Text.of("Load" + StardustUtil.rCC() + "§o✨"));
-                })
-                .dimensions(loadX, btnY, btnW, btnH)
+
+        loadLoadoutButton = this.addDrawableChild(
+            ButtonWidget.builder(
+                    Text.of("Load"+StardustUtil.rCC()+"§o✨"),
+                    this::onLoadLoadoutButtonPress
+                )
+                .dimensions(this.width / 2, this.height / 2 + 83, 42, 16)
                 .tooltip(Tooltip.of(Text.of("§7§oLoad your quicksave loadout.")))
                 .build()
         );
 
-        saveLoadoutButton.visible = loadouts.isActive();
-        loadLoadoutButton.visible = loadouts.isActive();
+        if (saveLoadoutButton != null) saveLoadoutButton.visible = loadouts.isActive();
+        if (loadLoadoutButton != null) loadLoadoutButton.visible = loadouts.isActive();
     }
 
-    // Called each frame at the end of InventoryScreen.render(...)
-    @Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;IIF)V", at = @At("TAIL"))
-    private void onRender(MatrixStack ms, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (loadouts == null) return;
+    @Inject(method = "render", at = @At("TAIL"))
+    private void mixinRender(CallbackInfo ci) {
+        if (loadouts == null) {
+            Modules modules = Modules.get();
+            if (modules == null ) return;
+            loadouts = modules.get(Loadouts.class);
+
+            if (loadouts == null) return;
+        }
+
         if (!loadouts.quickLoadout.get()) return;
-        saveLoadoutButton.visible = loadouts.isActive();
-        loadLoadoutButton.visible = loadouts.isActive();
+        if (saveLoadoutButton != null) {
+            saveLoadoutButton.visible = loadouts.isActive();
+        }
+        if (loadLoadoutButton != null) {
+            loadLoadoutButton.visible = loadouts.isActive();
+        }
     }
 
-    // Called each tick
-    @Inject(method = "tick", at = @At("HEAD"))
-    private void onTick(CallbackInfo ci) {
-        if (loadouts == null) return;
+    @Inject(method = "handledScreenTick", at = @At("HEAD"))
+    private void animateButtons(CallbackInfo ci) {
+        if (loadouts == null) {
+            Modules modules = Modules.get();
+            if (modules == null ) return;
+            loadouts = modules.get(Loadouts.class);
+
+            if (loadouts == null) return;
+        }
+
         if (!loadouts.quickLoadout.get()) return;
-        if (loadouts.isActive() && saveLoadoutButton != null) {
-            saveLoadoutButton.setMessage(Text.of(StardustUtil.rCC() + "§o✨§fSave"));
-            loadLoadoutButton.setMessage(Text.of("Load" + StardustUtil.rCC() + "§o✨"));
+        if (loadouts.isActive() && !loadouts.isSorted) {
+            if (saveLoadoutButton != null) saveLoadoutButton.setMessage(Text.of(StardustUtil.rCC()+"§o✨§fSave"));
+            if (loadLoadoutButton != null) loadLoadoutButton.setMessage(Text.of("Load"+StardustUtil.rCC()+"§o✨"));
         }
     }
 }
